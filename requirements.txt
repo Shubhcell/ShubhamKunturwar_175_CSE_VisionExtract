@@ -1,0 +1,8 @@
+flask
+torch
+torchvision
+segmentation-models-pytorch
+albumentations
+opencv-python
+Pillow
+numpy
