@@ -6,3 +6,5 @@ albumentations
 opencv-python
 Pillow
 numpy
+gunicorn
+gunicorn

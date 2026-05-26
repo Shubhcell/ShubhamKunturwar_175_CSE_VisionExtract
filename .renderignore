@@ -1,0 +1,6 @@
+venv/
+*.ipynb
+Model/unet_coco.pth
+__pycache__/
+*.pyc
+.DS_Store
