@@ -9,4 +9,6 @@ ENV/
 .idea/
 .vscode/
 .ipynb_checkpoints/
+*.ipynb
+Model/unet_coco.pth
 .DS_Store
