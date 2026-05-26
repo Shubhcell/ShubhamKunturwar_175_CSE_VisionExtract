@@ -12,19 +12,32 @@ from PIL import Image
 
 app = Flask(__name__)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 
 model_path = os.path.join(os.getcwd(), 'Model', 'best_unet_model.pth')
 
-try:
-    model = Unet(encoder_name='resnet34', encoder_weights='imagenet', in_channels=3, classes=1, activation='sigmoid')
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    print("Model loaded successfully.")
-except FileNotFoundError:
-    print(f"Model file not found at {model_path}. Please ensure the model is trained and saved.")
-    model = None
+# Lazy-loaded model to avoid heavy startup memory/cold-start on Render
+model = None
+
+def load_model():
+    """Load the segmentation model into memory on first use."""
+    global model
+    if model is None:
+        print("Loading model...")
+        model_instance = Unet(
+            encoder_name='resnet34',
+            encoder_weights='imagenet',
+            in_channels=3,
+            classes=1,
+            activation='sigmoid'
+        )
+
+        model_instance.load_state_dict(torch.load(model_path, map_location=device))
+        model_instance.to(device)
+        model_instance.eval()
+
+        model = model_instance
+        print("Model loaded successfully.")
 
 val_transform = A.Compose([
     A.Resize(256, 256),
@@ -60,6 +73,7 @@ def data_url_to_image(data_url):
 
 
 def segment_image(image_np):
+    load_model()
     transformed = val_transform(image=image_np)
     input_tensor = transformed['image'].unsqueeze(0).to(device)
     with torch.no_grad():
@@ -114,10 +128,12 @@ def replace_background(image_np, mask, bg_type='purple'):
 def upload_file():
     if request.method == 'POST':
         file = request.files.get('file')
-        if file and file.filename and model:
+        if file and file.filename:
             try:
                 image = Image.open(file.stream).convert('RGB')
                 image_np = np.array(image)
+
+                load_model()
 
                 transformed = val_transform(image=image_np)
                 input_tensor = transformed['image'].unsqueeze(0).to(device)
@@ -154,8 +170,10 @@ def live():
 
 @app.route('/process_frame', methods=['POST'])
 def process_frame():
-    if not model:
-        return jsonify(error="Model not loaded"), 500
+    try:
+        load_model()
+    except Exception as e:
+        return jsonify(error=f"Model load failed: {str(e)}"), 500
 
     data = request.get_json(force=True)
     frame_data = data.get('frame') if data else None
