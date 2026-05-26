@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>VisionExtract Live</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+    />
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .output-card {
+            transition: all 0.25s ease;
+        }
+
+        .output-card:hover {
+            transform: translateY(-4px);
+        }
+    </style>
+</head>
+
+<body class="bg-slate-950 min-h-screen text-white">
+
+    <!-- Hidden Elements Required For Webcam Processing -->
+    <video id="video" autoplay muted playsinline class="hidden"></video>
+    <canvas id="captureCanvas" class="hidden"></canvas>
+
+    <div class="max-w-[1800px] mx-auto px-6 py-8">
+
+        <!-- HEADER -->
+        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 mb-10">
+
+            <div>
+                <h1 class="text-5xl lg:text-6xl font-bold tracking-tight">
+                    VisionExtract Live
+                </h1>
+
+                <p class="text-slate-400 text-lg mt-3">
+                    Real-time AI background segmentation using webcam feed
+                </p>
+            </div>
+
+            <a href="/"
+               class="bg-indigo-600 hover:bg-indigo-700 transition px-6 py-4 rounded-2xl text-lg font-semibold shadow-xl">
+                ← Back to Image Mode
+            </a>
+
+        </div>
+
+        <!-- CONTROL PANEL -->
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl mb-10">
+
+            <div class="grid lg:grid-cols-4 gap-5">
+
+                <!-- START BUTTON -->
+                <button
+                    id="startBtn"
+                    class="bg-green-600 hover:bg-green-700 transition rounded-2xl py-4 text-lg font-semibold"
+                >
+                    Start Camera
+                </button>
+
+                <!-- STOP BUTTON -->
+                <button
+                    id="stopBtn"
+                    class="bg-red-600 hover:bg-red-700 transition rounded-2xl py-4 text-lg font-semibold"
+                >
+                    Stop Camera
+                </button>
+
+                <!-- STATUS -->
+                <div
+                    class="bg-slate-800 rounded-2xl py-4 flex items-center justify-center text-lg"
+                >
+                    Status:
+                    <span id="status" class="ml-2 font-bold text-green-400">
+                        Stopped
+                    </span>
+                </div>
+
+                <!-- BACKGROUND SELECT -->
+                <select
+                    id="backgroundSelect"
+                    class="bg-slate-800 border border-slate-700 rounded-2xl px-5 py-4 text-lg text-white focus:outline-none"
+                >
+                    <option value="purple">Soft Purple</option>
+                    <option value="teal">Teal Glow</option>
+                    <option value="gradient">Pink Gradient</option>
+                    <option value="blur">Blurred Room</option>
+                </select>
+
+            </div>
+        </div>
+
+        <!-- OUTPUT SECTION -->
+        <div class="grid xl:grid-cols-2 gap-10">
+
+            <!-- PROCESSED OUTPUT -->
+            <div class="output-card bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+
+                <div class="flex items-center justify-between mb-5">
+
+                    <div>
+                        <h2 class="text-3xl font-bold">
+                            Processed Output
+                        </h2>
+
+                        <p class="text-slate-400 mt-1">
+                            Background removed in real time
+                        </p>
+                    </div>
+
+                </div>
+
+                <div
+                    class="bg-black rounded-3xl overflow-hidden h-[780px] flex items-center justify-center"
+                >
+
+                    <img
+                        id="processedImage"
+                        src=""
+                        alt="Processed Output"
+                        class="w-full h-full object-contain"
+                    />
+
+                </div>
+
+            </div>
+
+            <!-- SEGMENTATION MASK -->
+            <div class="output-card bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl">
+
+                <div class="flex items-center justify-between mb-5">
+
+                    <div>
+                        <h2 class="text-3xl font-bold">
+                            Segmentation Mask
+                        </h2>
+
+                        <p class="text-slate-400 mt-1">
+                            Live prediction mask from model
+                        </p>
+                    </div>
+
+                </div>
+
+                <div
+                    class="bg-black rounded-3xl overflow-hidden h-[780px] flex items-center justify-center"
+                >
+
+                    <img
+                        id="maskImage"
+                        src=""
+                        alt="Segmentation Mask"
+                        class="w-full h-full object-contain"
+                    />
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+
+        const video = document.getElementById('video');
+        const captureCanvas = document.getElementById('captureCanvas');
+
+        const processedImage = document.getElementById('processedImage');
+        const maskImage = document.getElementById('maskImage');
+
+        const statusLabel = document.getElementById('status');
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+
+        const backgroundSelect = document.getElementById('backgroundSelect');
+
+        let stream = null;
+        let running = false;
+        let processing = false;
+
+        async function startCamera() {
+
+            if (running) return;
+
+            try {
+
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: false
+                });
+
+                video.srcObject = stream;
+
+                running = true;
+
+                statusLabel.textContent = 'Starting...';
+
+                video.onloadedmetadata = () => {
+
+                    video.play();
+
+                    statusLabel.textContent = 'Live';
+
+                    sendFrameLoop();
+                };
+
+            } catch (err) {
+
+                console.error(err);
+
+                statusLabel.textContent = 'Error';
+
+                alert('Unable to access webcam.');
+
+            }
+        }
+
+        function stopCamera() {
+
+            if (stream) {
+
+                stream.getTracks().forEach(track => track.stop());
+
+                stream = null;
+            }
+
+            running = false;
+            processing = false;
+
+            statusLabel.textContent = 'Stopped';
+        }
+
+        function captureFrameData() {
+
+            if (!video.videoWidth || !video.videoHeight) {
+                return null;
+            }
+
+            captureCanvas.width = video.videoWidth;
+            captureCanvas.height = video.videoHeight;
+
+            const ctx = captureCanvas.getContext('2d');
+
+            ctx.drawImage(
+                video,
+                0,
+                0,
+                captureCanvas.width,
+                captureCanvas.height
+            );
+
+            return captureCanvas.toDataURL('image/jpeg', 0.7);
+        }
+
+        async function sendFrameLoop(force = false) {
+
+            if (!running || (processing && !force)) return;
+
+            const frame = captureFrameData();
+
+            if (!frame) {
+
+                requestAnimationFrame(() => sendFrameLoop(force));
+
+                return;
+            }
+
+            processing = true;
+
+            const bgType = backgroundSelect.value;
+
+            try {
+
+                const response = await fetch('/process_frame', {
+
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+
+                    body: JSON.stringify({
+                        frame,
+                        background: bgType
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.frame) {
+                    processedImage.src = result.frame;
+                }
+
+                if (result.mask) {
+                    maskImage.src = result.mask;
+                }
+
+                if (result.error) {
+                    console.error(result.error);
+                }
+
+            } catch (err) {
+
+                console.error(err);
+
+            } finally {
+
+                processing = false;
+
+                if (running) {
+
+                    setTimeout(() => {
+                        sendFrameLoop(false);
+                    }, 250);
+                }
+            }
+        }
+
+        startBtn.addEventListener('click', startCamera);
+
+        stopBtn.addEventListener('click', stopCamera);
+
+        backgroundSelect.addEventListener('change', () => {
+
+            if (running) {
+                sendFrameLoop(true);
+            }
+        });
+
+    </script>
+
+</body>
+</html>
